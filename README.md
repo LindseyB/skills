@@ -80,3 +80,11 @@ Reads a meeting transcript file and produces structured notes with:
 **Usage**: Ask your AI assistant to schedule your monthly lunches
 
 Automatically finds open 30-minute windows between 12-3pm on remaining weekdays this month and creates "Lunch" calendar blocks where none exist.
+
+### Write Skill
+
+**Triggers**: "create a skill for [task]", "write a new skill", "make a skill that does [x]"
+
+**Usage**: Ask your AI assistant to create a new skill definition
+
+Generates a properly structured SKILL.md file with frontmatter, step-by-step instructions, output format, and gotchas. Perfect for expanding your skill library with new capabilities.
