@@ -1,103 +1,88 @@
 ---
 name: daily-standup
-description: Generate a simple emoji-prefixed list of today's meetings and tasks based on the calendar and recent Slack messages. Use when the user says "give me my standup for today", "what am I doing today", "what are my tasks today", "give me my todos today", or any similar phrasing asking for a daily overview.
+description: Generate Lindsey's Geekbot standup answers ("What will you do today?" and "What have you done since yesterday?") as grouped, cinnamoroll-emoji-prefixed lines built from the daily log, calendar, and Slack. Use when the user says "give me my standup", "write my standup for today", "standup for what I did yesterday", "what am I doing today", "give me my todos today", or any similar phrasing asking for a daily overview or Geekbot answer.
 ---
 
 # Daily Standup Generator
 
-Produce a clean, emoji-prefixed list of what the user is doing today — no bullets, no extra formatting, just the list. Modeled after the format the user already uses in their own standup posts.
+Produce paste-ready answers for the Foundation Standup in Geekbot: one line per group, each line starting with a cinnamoroll Slack emoji. No bullets, no headers, no leading spaces.
 
-## Step 1: Fetch Today's Calendar
+## Which answer to write
 
-```bash
-./ld gcal today --output json
-```
+| User asks for | Answer | Day it covers |
+|---|---|---|
+| "today", "what will I do", "my todos" | **What will you do today?** | Today |
+| "yesterday", "what did I do", "since Friday" | **What have you done since yesterday?** | The previous workday (Friday on a Monday) |
+| "my standup" with no qualifier | Both, labeled | Both |
 
-Filter out:
-- All-day events (OOO, PTO banners, holidays)
-- Events the user has **declined**
-- Events marked as "free" / non-blocking
-- Duplicate entries
+## Step 1: Load the live cinnamoroll emoji set
 
-Keep events in **chronological order**.
-
-## Step 2: Fetch Today's Slack Context (Optional Enrichment)
-
-Pull recent Slack messages to surface any async tasks or follow-ups the user mentioned they'd do today:
-
-```bash
-./ld slack search "from:lbieda after:yesterday" --limit 20 --sort timestamp
-```
-
-Scan for:
-- Commitments like "I'll do X today", "will follow up", "on my list for today"
-- Action items assigned to the user in threads they're active in
-
-Only include Slack-sourced items if they are clearly concrete tasks for today. Do not add speculative or vague items.
-
-## Step 3: Build the List
-
-Combine calendar events (in time order) and any Slack-sourced tasks into a single ordered list.
-
-For each item, assign an emoji and write a short, clean title:
-
-### Emoji Mapping
-
-| Event type | Emoji |
-|---|---|
-| 1:1 / one-on-one | `:bust_in_silhouette:` |
-| Team sync / standup / foundation sync | `:building_construction:` |
-| Planning session / roadmap / strategy | `:cinna-frolic:` |
-| Engineering / technical work / coding | `:coding:` |
-| Metrics / data / analytics / tracking | `:bar_chart:` |
-| Lunch / food / break | `:green_salad:` |
-| Incident / on-call / fire | `:fire_engine:` |
-| Interview | `:microphone:` |
-| All-hands / company meeting | `:busts_in_silhouette:` |
-| Triad / cross-functional / leadership | `:small_red_triangle:` |
-| AI / agent / ML work | `:robot_face:` |
-| Design / UX / review | `:art:` |
-| Writing / docs / PRD | `:kirby-type:` |
-| Hiring / recruiting | `:briefcase:` |
-| Demo / presentation | `:clapper:` |
-| Offsite / travel | `:airplane:` |
-| Anything else / uncategorized | `:calendar:` |
-
-### Title Formatting Rules
-
-- Keep titles **short** — 3-6 words max
-- Strip filler words like "Weekly", "Sync with", "Meeting:", "Discussion about"
-- For 1:1s: use format `1:1 [First Name]` — just the first name
-- For recurring standups: just the team or project name (e.g. `Foundation Sync` not `Foundation Weekly Team Standup`)
-- Capitalize each word
-- No punctuation at the end
-
-## Step 4: Output
-
-Print the list with **no bullets, no headers, no extra formatting** — just one item per line, emoji followed by a space and the title, indented with two spaces on all items:
+Every run, list what actually exists in the workspace, since custom emoji get added and removed:
 
 ```
-:brain: Agentic Onboarding Planning: Part 2
-  :building_construction: Foundation Sync
-  :bust_in_silhouette: 1:1 Cody
-  :bust_in_silhouette: 1:1 Alexis
-  :wrench: Quickstart Wizard CLI Followup
-  :green_salad: Lunch
-  :bust_in_silhouette: 1:1 Eric
-  :bust_in_silhouette: 1:1 Patrick
-  :bar_chart: Sample Data Metrics/Tracking
-  :small_red_triangle: Foundation Triad
-  :robot_face: Agentic Work Planning
+slack_search_emojis(query: "cinnamoroll,cinna")
 ```
 
-Output this directly in the conversation — no artifact file needed. The user will copy-paste it into Slack.
+Only output emoji names that appear in that result, plus the two non-cinnamoroll exceptions below. Never invent a cinnamoroll name.
+
+## Step 2: Gather sources
+
+1. **Daily log**: `~/Documents/main/logs/YYYY-MM-DD.md` for the day being covered. It's the best source: Meetings, Meeting Notes (skipped or moved meetings are marked there), Slack, GitHub, Incidents, Notes, and Carry-over.
+2. **Calendar** (fallback for meetings, or when there's no log yet): `./ld gcal today --output json`, or `./ld gcal date YYYY-MM-DD` for a past day. Keep only events the user **accepted** or organizes. Skip declined and needsAction ones, plus all-day banners, holidays, OOO, and "No meeting Wednesday".
+3. **Slack** (for "yesterday", or when the log is thin): `./ld slack search "from:@lbieda on:YYYY-MM-DD" --limit 100 --output json`.
+4. **Previous answers** (for tone): `./ld slack history D0AAWSQ26MR --limit 20 --output json` is the Geekbot DM. Match its style.
+
+## Step 3: Group and pick emoji
+
+Group same-type items onto one line and join names with commas, for example `:cinnamoroll-1on1: 1:1s with Ari, Henry, Natalie`. Order the lines: on-call first, then meetings in roughly calendar order, then heads-down work last.
+
+### Preferred emoji (the user's established usage)
+
+| Item | Emoji | Example line |
+|---|---|---|
+| On-call / IM week | `:incident-io:` | `:incident-io: On-call this week` |
+| 1:1s | `:cinnamoroll-1on1:` | `:cinnamoroll-1on1: 1:1s with Ari, Natalie` |
+| Team sync / planning | `:cinna-frolic:` | `:cinna-frolic: Foundation sync` |
+| Cross-team meetings, reviews, SERs | `:cinnamoroll-zoom:` | `:cinnamoroll-zoom: Eng Managers Weekly, SER` |
+| Foundation Triad | `:triadlove:` | `:triadlove: Foundation Triad` |
+| Tech Team Weekly / all hands | `:cinnamoroll-with-balloons:` | `:cinnamoroll-with-balloons: Tech Team Weekly Meeting` |
+| Heads-down work (OKRs, check-ins, docs) | `:cinnamoroll-teacup:` | `:cinnamoroll-teacup: Scoring OKRs and working on FY27Q3 check-ins` |
+| Shipped / merged / closed out | `:cinnamoroll-ok:` | `:cinnamoroll-ok: Merged the INC-301 hardening PR` |
+| Investigated / dug into / answered | `:cinnamoroll-question:` | `:cinnamoroll-question: Dug into a customer's account lockout` |
+| Travel | `:cinnamoroll-in-a-plane:` | |
+| Celebration / launch | `:cinnamoroll-cheerful:` | |
+
+`:incident-io:` and `:triadlove:` are the only non-cinnamoroll emoji allowed.
+
+**Fallback:** if an item fits no row, or a preferred emoji is missing from Step 1's result, pick the closest cinnamoroll emoji by name from the live list. For example, `-musicnote` for something music-related, `-sk8ing` for something fast or unblocked, `-blanket` or `-peaceful` for low-key work. Never fall back to standard Unicode emoji.
+
+## Step 4: Write the lines
+
+- **Today:** accepted meetings, plus at most two concrete heads-down tasks from the log's Notes or Carry-over (due dates first). Leave out ongoing habits.
+- **Yesterday:** what actually happened, from the log's Slack, GitHub, Incidents, and Meeting Notes. Lead with outcomes ("resolved INC-300", "merged …", "escalated … to Billing"). Leave out meetings that were skipped or moved. Aim for 3 to 6 lines.
+- Keep each line short, with names only (first names for people). Leave out sensitive details (security incident specifics beyond the INC number and a short title, personal or family matters, performance topics).
+- If the covered day was a day off with nothing logged, suggest a single `:cinnamoroll-sleep:` instead.
+
+## Step 5: Output
+
+Put each answer in its own fenced block, **flush left with no leading spaces**, labeled with the Geekbot question:
+
+**What will you do today?**
+```
+:incident-io: On-call this week
+:cinnamoroll-zoom: Billing <> Foundation chat, Context kinds problem framing and scoping
+:cinnamoroll-1on1: 1:1s with Ari, Natalie
+:triadlove: Foundation Triad
+:cinnamoroll-teacup: FY27Q3 check-ins and getting team work into Atlas
+```
+
+After the block, add one line naming any emoji that came from the fallback, so the user can swap it. For "How do you feel today?", suggest one emoji from the live set if asked; the user's usual answers are `:cinnamoroll-sleep:` and `:cinnamoroll-rip:`.
 
 ## Gotchas
 
-- **Declined events**: Skip them. Don't include anything the user said no to.
-- **Lunch**: If there's a "Lunch" block on the calendar, include it. If not, do **not** add a fabricated lunch unless the user explicitly asked.
-- **All-day events**: Skip banners like "Cody OOO", "PTO", holidays. They are not tasks.
-- **Duplicates**: If the same meeting appears twice (e.g. from two calendars), deduplicate.
-- **Optional events**: Include events marked optional unless they are declined — the user can decide to attend.
-- **Long event titles**: Shorten aggressively. A title like "Agentic Experiences V2 Weekly Planning — Foundation Team" becomes `Agentic Onboarding Planning`.
-- **No Slack items if nothing clear**: If Slack doesn't surface any concrete today-tasks, that's fine — just use the calendar. Don't add noise.
+- **Never post to Geekbot or Slack.** The user pastes the answers themselves.
+- **Skipped or moved meetings:** the log marks them ("skipped", "moved"). Leave them out of "yesterday".
+- **Lunch:** leave it out. The user's standups never include it.
+- **Unresolved Slack IDs:** don't guess names. Leave that item out or describe it without a name.
+- **Duplicates:** deduplicate the same meeting showing up from two calendars.
+
